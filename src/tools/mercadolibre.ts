@@ -42,8 +42,9 @@ async function scrapePriceFromPage(url: string): Promise<string | null> {
       timeout: 6000,
     });
     const html: string = resp.data;
-    const match = html.match(/"price":(\d+)/);
-    if (match) return `$${parseInt(match[1]).toLocaleString("es-CO")} COP`;
+    // Buscar precio significativo (>10,000 COP para evitar falsos positivos)
+    const matches = [...html.matchAll(/"price":(\d+)/g)].map(m => parseInt(m[1])).filter(p => p > 10000);
+    if (matches.length) return `$${matches[0].toLocaleString("es-CO")} COP`;
     return null;
   } catch { return null; }
 }
@@ -52,21 +53,22 @@ async function scrapePriceFromPage(url: string): Promise<string | null> {
 async function searchViaBrave(query: string, limit: number): Promise<any[]> {
   if (!BRAVE_API_KEY) return [];
   try {
+    // Buscar primero en articulo.mercadolibre.com.co (productos individuales con precio en HTML)
     const resp = await axios.get("https://api.search.brave.com/res/v1/web/search", {
-      params: { q: `site:mercadolibre.com.co ${query}`, count: Math.min(limit * 2, 10) },
+      params: { q: `site:articulo.mercadolibre.com.co ${query}`, count: Math.min(limit + 2, 10) },
       headers: { "Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY },
       timeout: 8000,
     });
     const results = resp.data.web?.results ?? [];
     return results
-      .filter((r: any) => (r.url ?? "").includes("mercadolibre.com.co"))
+      .filter((r: any) => (r.url ?? "").includes("articulo.mercadolibre.com.co"))
       .slice(0, limit)
       .map((r: any) => {
-        const priceMatch = r.description?.match(/\$\s*([\d.,]+)/);
+        const priceMatch = r.description?.match(/[\$\s]*([\d.,]+\.[\d]{3})/);
         const price = priceMatch ? priceMatch[1].replace(/\./g,"") : null;
         const idMatch = (r.url ?? "").match(/MCO-?(\d+)/i);
         return {
-          titulo:      r.title?.replace(/ ?[|-]? ?MercadoLibre.*$/i,"").trim(),
+          titulo:      r.title?.replace(/ ?[|-]? ?(?:MercadoLibre|Cuotas sin interés).*$/i,"").trim(),
           precio:      price ? `$${parseInt(price).toLocaleString("es-CO")} COP` : "Ver en ML",
           link:        buildAffiliateUrl(r.url ?? ""),
           item_id:     idMatch ? `MCO${idMatch[1]}` : null,
