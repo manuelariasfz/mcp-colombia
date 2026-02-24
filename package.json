@@ -1,10 +1,10 @@
 {
-  "name": "mcp-colombia",
+  "name": "mcp-colombia-hub",
   "version": "1.0.0",
   "description": "MCP server for Colombian products, travel and finance — MercadoLibre, Booking.com hotels & flights, CDTs, loans and savings accounts",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "mcp-colombia": "dist/index.js" },
+  "bin": { "mcp-colombia-hub": "dist/index.js" },
   "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc",
@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/manuelariasfz/mcp-colombia.git"
+    "url": "git+https://github.com/manuelariasfz/mcp-colombia.git"
   },
   "homepage": "https://github.com/manuelariasfz/mcp-colombia#readme",
   "bugs": { "url": "https://github.com/manuelariasfz/mcp-colombia/issues" },

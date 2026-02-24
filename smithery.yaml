@@ -6,7 +6,7 @@ build:
 startCommand:
   type: stdio
   command: npx
-  args: ["-y", "mcp-colombia"]
+  args: ["-y", "mcp-colombia-hub"]
   configSchema:
     type: object
     properties:

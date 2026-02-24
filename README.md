@@ -70,7 +70,7 @@ Crea o edita `~/.cursor/mcp.json`:
 
 ```bash
 npm install -g mcporter
-mcporter config add mcp-colombia --command "npx -y mcp-colombia"
+mcporter config add mcp-colombia --command "npx -y mcp-colombia-hub"
 mcporter call mcp-colombia.finanzas_comparar_cdt monto=5000000 plazo_dias=180
 ```
 
