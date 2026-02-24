@@ -6,6 +6,7 @@ import { z } from "zod";
 import { searchProducts, getProduct }       from "./tools/mercadolibre.js";
 import { searchHotels, searchFlights }      from "./tools/booking.js";
 import { compararCDT, simularCredito, compararCuentas } from "./tools/finanzas.js";
+import { buscarInmuebles }                  from "./tools/inmuebles.js";
 
 // ── Servidor MCP ────────────────────────────────────────────────────────────
 const server = new McpServer({
@@ -80,6 +81,28 @@ server.tool(
   },
   async (args) => {
     const result = await searchFlights(args);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INMUEBLES
+// ══════════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "inmuebles_buscar",
+  "Busca apartamentos y casas en arriendo o venta en Colombia. Busca en FincaRaíz y MetroCuadrado. Filtra por ciudad, precio, habitaciones y zona.",
+  {
+    ciudad:       z.string().describe("Ciudad (Bogotá, Medellín, Cali, Barranquilla, Bucaramanga, Cartagena, Pereira...)"),
+    tipo:         z.enum(["arriendo", "venta"]).describe("Tipo de negocio: arriendo o venta"),
+    habitaciones: z.number().min(1).max(6).optional().describe("Número de habitaciones (1-6)"),
+    precio_max:   z.number().optional().describe("Precio máximo en COP (ej: 2000000 para $2M arriendo)"),
+    precio_min:   z.number().optional().describe("Precio mínimo en COP"),
+    zona:         z.string().optional().describe("Barrio o zona (ej: Chapinero, Laureles, El Poblado)"),
+    limit:        z.number().min(1).max(10).optional().default(6).describe("Cantidad de resultados"),
+  },
+  async (args) => {
+    const result = await buscarInmuebles(args);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );

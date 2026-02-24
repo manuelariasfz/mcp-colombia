@@ -1,21 +1,41 @@
 {
   "name": "mcp-colombia-hub",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server for Colombian products, travel and finance — MercadoLibre, Booking.com hotels & flights, CDTs, loans and savings accounts",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "mcp-colombia-hub": "dist/index.js" },
-  "files": ["dist", "README.md", "LICENSE"],
+  "bin": {
+    "mcp-colombia-hub": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "dev":   "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "mcp", "model-context-protocol", "colombia", "mercadolibre", "booking",
-    "finanzas", "cdt", "credito", "hoteles", "vuelos", "ai", "agent",
-    "claude", "cursor", "openai", "llm", "tools"
+    "mcp",
+    "model-context-protocol",
+    "colombia",
+    "mercadolibre",
+    "booking",
+    "finanzas",
+    "cdt",
+    "credito",
+    "hoteles",
+    "vuelos",
+    "ai",
+    "agent",
+    "claude",
+    "cursor",
+    "openai",
+    "llm",
+    "tools"
   ],
   "author": "MCP Colombia <mcpcolombia@gmail.com>",
   "license": "MIT",
@@ -24,16 +44,20 @@
     "url": "git+https://github.com/manuelariasfz/mcp-colombia.git"
   },
   "homepage": "https://github.com/manuelariasfz/mcp-colombia#readme",
-  "bugs": { "url": "https://github.com/manuelariasfz/mcp-colombia/issues" },
-  "engines": { "node": ">=18.0.0" },
+  "bugs": {
+    "url": "https://github.com/manuelariasfz/mcp-colombia/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "axios": "^1.6.0",
-    "zod":   "^3.22.0"
+    "zod": "^3.22.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "tsx":         "^4.0.0",
-    "typescript":  "^5.0.0"
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
   }
 }
