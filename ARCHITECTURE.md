@@ -133,7 +133,7 @@ C4Component
       "soulprint_status (debug):\n  token_present, did, score,\n  identity, bot_rep, level,\n  country, session_stats, node_url")
 
     Component(trabajoTool, "trabajo_aplicar", "index.ts",
-      "PREMIUM — score >= 95 requerido\nrequireSoulprint(capabilities, 95)\nBuild: application_id, applicant block,\ntrust_guarantees { human_verified,\n  no_spam_history, zkp }")
+      "PREMIUM — score >= 40 requerido\nrequireSoulprint(capabilities, 40)\nBuild: application_id, applicant block,\ntrust_guarantees { human_verified,\n  no_spam_history, zkp }")
   }
 
   Container(spLayer, "Soulprint Layer", "", "")
@@ -145,7 +145,7 @@ C4Component
   Rel(tracking, finanzasTool, "Delega si spam OK", "")
   Rel(tracking, inmueblesTool, "Delega si spam OK", "")
   Rel(tracking, spStatus, "Delega (sin spam check estricto)", "")
-  Rel(tracking, trabajoTool, "Delega + requireSoulprint(95)", "")
+  Rel(tracking, trabajoTool, "Delega + requireSoulprint(40)", "")
 
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
@@ -210,9 +210,9 @@ withTracking(toolName, handler)
     │               submitAttestation(att)  ← async
     │               return { isError: true, content: "⛔ Rate limit..." }
     │
-    ├─▶ 3. [Solo trabajo_aplicar] requireSoulprint(capabilities, 95)
-    │         ├─▶ score >= 95 → continuar
-    │         └─▶ score < 95 → return MCP error con score requerido
+    ├─▶ 3. [Solo trabajo_aplicar] requireSoulprint(capabilities, 40)
+    │         ├─▶ score >= 40 → continuar
+    │         └─▶ score < 40 → return MCP error con score requerido
     │
     ├─▶ 4. handler(args, botDid)
     │         └─▶ llama API externa → result
@@ -292,7 +292,7 @@ trackCompletion(did, tool):
 | `finanzas_comparar_cuentas` | Datos estáticos | — | — |
 | `inmuebles_buscar` | Ciencuadras JSON-LD | — (público) | — |
 | `soulprint_status` | Token + sesión en memoria | Opcional | — |
-| `trabajo_aplicar` | Interno | **SPT score ≥ 95** | — |
+| `trabajo_aplicar` | Interno | **SPT score ≥ 40** | — |
 
 ### ML OAuth flow
 
@@ -385,7 +385,7 @@ El keypair del servicio se genera en el primer arranque y persiste en `~/.soulpr
 |---|---|
 | Spam bloqueado (429) | > 5 requests en 60s |
 | Sin identidad (401) | `trabajo_aplicar` sin token SPT |
-| Score insuficiente (403) | Score < 95 para endpoint premium |
+| Score insuficiente (403) | Score < 40 para endpoint premium |
 | API fallida (502) | API externa no responde |
 | Parámetros inválidos (400) | Args obligatorios faltantes |
 

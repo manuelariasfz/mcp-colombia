@@ -190,8 +190,8 @@ async function runUnitTests() {
 
   await test("verifySoulprint() rechaza token con minScore insuficiente", () => {
     const { token } = makeToken("low");  // score ~16
-    const r = verifySoulprint(token, 95);
-    assert(!r.ok, "Score bajo debe ser rechazado con minScore=95");
+    const r = verifySoulprint(token, 40);
+    assert(!r.ok, "Score bajo debe ser rechazado con minScore=40");
     if (!r.ok) assert(r.error.includes("Score insuficiente"), "Error debe mencionar score");
   });
 
@@ -203,8 +203,8 @@ async function runUnitTests() {
 
   await test("requireSoulprint() aprueba token con score suficiente", () => {
     const { token } = makeToken("premium");
-    const r = requireSoulprint(makeCaps(token), 95, "trabajo_aplicar");
-    assert(r.ok, "Token premium debe aprobar con minScore=95");
+    const r = requireSoulprint(makeCaps(token), 40, "trabajo_aplicar");
+    assert(r.ok, "Token premium debe aprobar con minScore=40");
   });
 }
 
@@ -225,11 +225,11 @@ async function runIntegrationTests() {
     assert(r.allowed, "Bot anónimo debe poder hacer búsqueda básica");
   });
 
-  await test("Bot anónimo NO puede usar trabajo_aplicar (score=0 < 95)", () => {
+  await test("Bot anónimo NO puede usar trabajo_aplicar (score=0 < 40)", () => {
     // Sin capabilities, requireSoulprint falla
-    const r = requireSoulprint({}, 95, "trabajo_aplicar");
+    const r = requireSoulprint({}, 40, "trabajo_aplicar");
     assert(!r.ok, "Bot sin identidad debe ser rechazado del endpoint premium");
-    if (!r.ok) assert(r.mcpError.content[0].text.includes("score >= 95"), "Mensaje debe indicar score requerido");
+    if (!r.ok) assert(r.mcpError.content[0].text.includes("score >= 40"), "Mensaje debe indicar score requerido");
   });
 
   // Escenario 2: Bot con score bajo
@@ -238,8 +238,8 @@ async function runIntegrationTests() {
   await test("Bot con EmailVerified (score ~18) no puede usar trabajo_aplicar", () => {
     const { token } = makeToken("low");    // score ~18
     const d = verifySoulprint(token);
-    assert(d.ok && d.ctx.score < 95, `Score debe ser < 95 (es ${d.ok ? d.ctx.score : "invalid"})`);
-    const r = requireSoulprint(makeCaps(token), 95, "trabajo_aplicar");
+    assert(d.ok && d.ctx.score < 40, `Score debe ser < 40 (es ${d.ok ? d.ctx.score : "invalid"})`);
+    const r = requireSoulprint(makeCaps(token), 40, "trabajo_aplicar");
     assert(!r.ok, "Score bajo debe ser rechazado");
   });
 
@@ -257,8 +257,8 @@ async function runIntegrationTests() {
     const d = verifySoulprint(token);
     assert(d.ok, "Token premium debe ser válido");
     if (d.ok) eq(d.ctx.score, 100, "Score debe ser 100");
-    const r = requireSoulprint(makeCaps(token), 95, "trabajo_aplicar");
-    assert(r.ok, "Score 100 debe aprobar con minScore=95");
+    const r = requireSoulprint(makeCaps(token), 40, "trabajo_aplicar");
+    assert(r.ok, "Score 100 debe aprobar con minScore=40");
   });
 
   await test("Bot premium tiene ctx.identity=80 y ctx.botRep=20 correctos", () => {

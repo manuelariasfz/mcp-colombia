@@ -78,7 +78,7 @@ Con identidad verificada (endpoints premium):
 | Tool | Descripción | Requiere |
 |---|---|---|
 | `soulprint_status` | Ver tu score, DID, sesión y reputación | Opcional |
-| `trabajo_aplicar` | **PREMIUM** — Aplica a empleos con identidad verificada | **Score ≥ 95** |
+| `trabajo_aplicar` | **PREMIUM** — Aplica a empleos con identidad verificada | **Score ≥ 40** |
 
 ---
 
@@ -95,7 +95,7 @@ mcp-colombia-hub es el **primer servicio verificado** del ecosistema Soulprint. 
 
 ### Endpoint premium — `trabajo_aplicar`
 
-Requiere **Soulprint score ≥ 95** (identidad completa + reputación sólida):
+Requiere **Soulprint score ≥ 40** (identidad básica verificada):
 
 ```bash
 # Verificar tu identidad primero

@@ -200,7 +200,7 @@ server.tool(
 
 server.tool(
   "trabajo_aplicar",
-  `🔐 PREMIUM — Requiere Soulprint score >= 95.
+  `🔐 PREMIUM — Requiere Soulprint score >= 40.
    Aplica a ofertas laborales en Colombia con tu identidad verificada ZK.
    Compañías confían en candidatos con Soulprint porque el bot está respaldado
    por un humano real y tiene historial de comportamiento verificado.`,
@@ -213,8 +213,8 @@ server.tool(
     mensaje:      z.string().max(500).optional().describe("Mensaje de presentación (máx 500 chars)"),
   },
   async (args: any, extra?: any) => {
-    // ── Verificación Soulprint SCORE >= 95 ────────────────────────────────
-    const check = requireSoulprint(extra?.capabilities ?? {}, 95, "trabajo_aplicar");
+    // ── Verificación Soulprint SCORE >= 40 ────────────────────────────────
+    const check = requireSoulprint(extra?.capabilities ?? {}, 40, "trabajo_aplicar");
     if (!check.ok) return check.mcpError;
 
     const { ctx } = check;
@@ -346,7 +346,7 @@ server.tool(
           node_reputation:    nodeReputation,
 
           premium_access: {
-            trabajo_aplicar: ctx.score >= 95 ? "✅ DISPONIBLE" : `❌ Necesitas score >= 95 (tienes ${ctx.score})`,
+            trabajo_aplicar: ctx.score >= 40 ? "✅ DISPONIBLE" : `❌ Necesitas score >= 40 (tienes ${ctx.score})`,
           },
         }, null, 2),
       }],
