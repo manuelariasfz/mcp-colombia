@@ -1,422 +1,355 @@
 # mcp-colombia-hub — Architecture (v1.2.0)
 
-> Technical reference for the mcp-colombia-hub MCP server.  
-> The first Soulprint-verified service in the ecosystem.
+> Diagramas C4 + referencia técnica del servidor MCP.  
+> Primer servicio verificado del ecosistema [Soulprint](https://github.com/manuelariasfz/soulprint).
 
 ---
 
-## Table of Contents
+## Tabla de contenidos
 
-1. [Overview](#1-overview)
-2. [Request Lifecycle](#2-request-lifecycle)
-3. [Soulprint Integration](#3-soulprint-integration)
-4. [Behavior Tracker](#4-behavior-tracker)
-5. [Tool Architecture](#5-tool-architecture)
-6. [Data Sources](#6-data-sources)
-7. [Service Identity](#7-service-identity)
-8. [File Structure](#8-file-structure)
-9. [Configuration](#9-configuration)
-10. [Error Handling](#10-error-handling)
+1. [C4 — Level 1: System Context](#c4--level-1-system-context)
+2. [C4 — Level 2: Containers](#c4--level-2-containers)
+3. [C4 — Level 3: Components — MCP Server](#c4--level-3-components--mcp-server)
+4. [C4 — Level 3: Components — Soulprint Layer](#c4--level-3-components--soulprint-layer)
+5. [Request Lifecycle](#request-lifecycle)
+6. [Behavior Tracker](#behavior-tracker)
+7. [Tool Implementations](#tool-implementations)
+8. [Service Identity](#service-identity)
+9. [Configuration](#configuration)
+10. [Error Handling](#error-handling)
 
 ---
 
-## 1. Overview
+## C4 — Level 1: System Context
 
-mcp-colombia-hub is an **MCP (Model Context Protocol) server** that exposes 10 tools covering Colombian services: product search, travel, finance, real estate, and premium job applications.
+> ¿Quién usa mcp-colombia-hub y con qué sistemas externos interactúa?
 
-It is the **first verified service** in the [Soulprint](https://github.com/manuelariasfz/soulprint) ecosystem, meaning it:
+```mermaid
+C4Context
+  title System Context — mcp-colombia-hub v1.2.0
 
-- Has its own Soulprint DID (score = 80)
-- Issues behavioral attestations (+1/-1) to bot DIDs
-- Gates the `trabajo_aplicar` endpoint at score ≥ 95
+  Person(user, "AI Agent / Bot", "Claude, GPT, AutoGPT, etc.\nLlama al servidor con\nun token Soulprint SPT")
+  Person(dev, "Developer", "Configura el MCP server\nen su cliente de IA")
 
-```
-Claude / Cursor / any MCP client
-        │
-        │ MCP protocol (stdio / HTTP)
-        ▼
-┌───────────────────────────────────────────────┐
-│             mcp-colombia-hub                  │
-│                                               │
-│  ┌──────────────┐   ┌─────────────────────┐  │
-│  │ MCP Server   │   │  Soulprint Layer     │  │
-│  │              │   │                      │  │
-│  │  10 tools    │──▶│  extractToken()      │  │
-│  │  withTracking│   │  verifySoulprint()   │  │
-│  │  wrapper     │   │  trackRequest()      │  │
-│  └──────────────┘   │  trackCompletion()   │  │
-│                     │  issueAttestation()  │  │
-│  ┌──────────────┐   └─────────────────────┘  │
-│  │  Data APIs   │                             │
-│  │              │                             │
-│  │  MercadoLibre│                             │
-│  │  Booking/Awin│                             │
-│  │  Finanzas    │                             │
-│  │  Ciencuadras │                             │
-│  └──────────────┘                             │
-└───────────────────────────────────────────────┘
-        │                   │
-        ▼                   ▼
- Colombian APIs     Soulprint Validator Node
-                    (localhost:4888 by default)
+  System_Boundary(mcpco, "mcp-colombia-hub") {
+    System(server, "mcp-colombia-hub", "MCP server con 10 herramientas\nde servicios colombianos.\nPrimer servicio verificado Soulprint.")
+  }
+
+  System_Ext(soulprint, "Soulprint Protocol", "Identidad ZK + reputación\ndescentralizada para bots.\ngithub.com/manuelariasfz/soulprint")
+  System_Ext(validator, "Soulprint Validator Node", "Nodo HTTP que almacena\nreputación de bots y\nregistro anti-Sybil")
+  System_Ext(ml, "MercadoLibre Colombia", "API REST — productos,\nprecios, vendedores\napi.mercadolibre.com/sites/MCO")
+  System_Ext(booking, "Booking.com / Awin", "Vuelos y hoteles\nvía red de afiliados Awin\n(publisher 2784246)")
+  System_Ext(ciencuadras, "Ciencuadras", "Portal inmuebles Colombia\nJSON-LD scraping\nciencuadras.com")
+  System_Ext(brave, "Brave Search API", "Fallback cuando ML API\ndevuelve 403 desde\nIP de servidor")
+
+  Rel(user, server, "Llama herramientas", "MCP protocol (stdio)")
+  Rel(dev, server, "Configura en claude_desktop_config.json", "npx -y mcp-colombia-hub")
+  Rel(server, soulprint, "Verifica tokens SPT", "soulprint-core library")
+  Rel(server, validator, "Envía attestations (+1/-1)", "HTTP POST /reputation/attest")
+  Rel(validator, validator, "Gossip P2P entre nodos", "HTTP fire-and-forget")
+  Rel(server, ml, "Búsqueda y detalle de productos", "REST + OAuth2")
+  Rel(server, booking, "Vuelos y hoteles", "REST + Awin token")
+  Rel(server, ciencuadras, "Inmuebles en venta/arriendo", "JSON-LD scraping")
+  Rel(server, brave, "Fallback búsqueda ML (403)", "REST + API key")
+
+  UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
 ```
 
 ---
 
-## 2. Request Lifecycle
+## C4 — Level 2: Containers
 
-Every tool call follows this pipeline:
+> Los bloques técnicos dentro del servidor.
+
+```mermaid
+C4Container
+  title Container Diagram — mcp-colombia-hub v1.2.0
+
+  Person(bot, "AI Bot", "Llama herramientas MCP")
+
+  System_Boundary(mcpco, "mcp-colombia-hub") {
+
+    Container(mcpServer, "MCP Server", "Node.js / TypeScript",
+      "Proceso stdio lanzado vía npx.\nRegistra 10 tools con withTracking().\nEntrypoint: src/index.ts")
+
+    Container(toolHandlers, "Tool Handlers", "TypeScript modules",
+      "mercadolibre.ts — ML search/detail/OAuth\nbooking.ts — vuelos + hoteles (Awin)\nfinanzas.ts — CDT, crédito, cuentas\ninmuebles.ts — Ciencuadras JSON-LD")
+
+    Container(spLayer, "Soulprint Layer", "TypeScript modules",
+      "middleware.ts — extractToken/verify/require\nbehavior-tracker.ts — spam/recompensas\nservice-identity.ts — DID + token del servicio")
+
+    ContainerDb(sessionStore, "Session Store", "In-memory Map",
+      "Map<DID → BotSession>\nRequests, tools usados,\ncompletions, spam warnings.\nReset on restart.")
+
+    ContainerDb(identityStore, "Identity Store", "Filesystem JSON (0600)",
+      "~/.soulprint/services/mcp-colombia/\nkeypair.json — Ed25519 DID del servicio\nToken cacheado 23h en memoria")
+  }
+
+  System_Ext(soulprintNet, "Soulprint Validator", "Red de nodos")
+  System_Ext(apis, "Colombian APIs", "ML, Booking, Ciencuadras, Brave")
+
+  Rel(bot, mcpServer, "tool call + capabilities.identity.soulprint", "MCP stdio")
+  Rel(mcpServer, toolHandlers, "Delega ejecución", "TypeScript import")
+  Rel(mcpServer, spLayer, "withTracking() wraps all tools", "TypeScript import")
+  Rel(spLayer, sessionStore, "trackRequest / trackCompletion", "In-process Map")
+  Rel(spLayer, identityStore, "getServiceKeypair / getServiceToken", "Node.js fs")
+  Rel(spLayer, soulprintNet, "POST /reputation/attest", "HTTP async")
+  Rel(toolHandlers, apis, "Llamadas a APIs externas", "HTTP REST")
+
+  UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+---
+
+## C4 — Level 3: Components — MCP Server
+
+> Lo que ocurre dentro de `src/index.ts` y los tool handlers.
+
+```mermaid
+C4Component
+  title Component Diagram — MCP Server (src/index.ts + tools/)
+
+  Container_Boundary(srv, "MCP Server + Tool Handlers") {
+
+    Component(registry, "Tool Registry", "index.ts",
+      "server.tool(name, schema, withTracking(handler))\nRegistra 10 herramientas al arrancar\nMcpServer de @modelcontextprotocol/sdk")
+
+    Component(tracking, "withTracking() Wrapper", "index.ts",
+      "Extrae DID del bot (verificado o anon:xxx)\nLlama trackRequest() — rechaza si spam\nEjecuta handler\nLlama trackCompletion() — emite +1 si aplica\nCaptura errores → trackError()")
+
+    Component(mlTool, "MercadoLibre Tools", "tools/mercadolibre.ts",
+      "ml_buscar_productos:\n  Primary: GET /sites/MCO/search (OAuth2)\n  Fallback: Brave Search API\nml_detalle_producto:\n  GET /items/:id\nmlAuth(): client_credentials, refresh on 401")
+
+    Component(bookingTool, "Booking Tools", "tools/booking.ts",
+      "viajes_buscar_vuelos:\n  GET Awin affiliate API\n  publisher=2784246, merchant=6776\nviajes_buscar_hotel:\n  Booking.com Colombia via Awin")
+
+    Component(finanzasTool, "Finanzas Tools", "tools/finanzas.ts",
+      "finanzas_comparar_cdt:\n  Tasas de 10+ bancos colombianos\nfinanzas_simular_credito:\n  Cuota mensual, total, costo financiero\nfinanzas_comparar_cuentas:\n  Cuentas ahorro/corriente con fees")
+
+    Component(inmueblesTool, "Inmuebles Tool", "tools/inmuebles.ts",
+      "inmuebles_buscar:\n  GET ciencuadras.com/busqueda?...\n  Extract: application/ld+json\n  ListingPage → offers[] → format")
+
+    Component(spStatus, "Soulprint Status Tool", "index.ts",
+      "soulprint_status (debug):\n  token_present, did, score,\n  identity, bot_rep, level,\n  country, session_stats, node_url")
+
+    Component(trabajoTool, "trabajo_aplicar", "index.ts",
+      "PREMIUM — score >= 95 requerido\nrequireSoulprint(capabilities, 95)\nBuild: application_id, applicant block,\ntrust_guarantees { human_verified,\n  no_spam_history, zkp }")
+  }
+
+  Container(spLayer, "Soulprint Layer", "", "")
+
+  Rel(registry, tracking, "Envuelve todos los handlers", "")
+  Rel(tracking, spLayer, "extractDID, trackRequest/Completion", "")
+  Rel(tracking, mlTool, "Delega si spam OK", "")
+  Rel(tracking, bookingTool, "Delega si spam OK", "")
+  Rel(tracking, finanzasTool, "Delega si spam OK", "")
+  Rel(tracking, inmueblesTool, "Delega si spam OK", "")
+  Rel(tracking, spStatus, "Delega (sin spam check estricto)", "")
+  Rel(tracking, trabajoTool, "Delega + requireSoulprint(95)", "")
+
+  UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+---
+
+## C4 — Level 3: Components — Soulprint Layer
+
+> Cómo el servidor verifica tokens y construye reputación.
+
+```mermaid
+C4Component
+  title Component Diagram — Soulprint Layer (src/soulprint/)
+
+  Container_Boundary(sp, "Soulprint Layer") {
+
+    Component(middleware, "Middleware", "middleware.ts",
+      "extractToken(capabilities):\n  1. capabilities.identity.soulprint\n  2. process.env.SOULPRINT_TOKEN\n  3. null (anónimo)\n\nverifySoulprint(token, minScore?):\n  decodeToken → verifySig → check expiry\n  → { ok, ctx } | { ok: false, error }\n\nrequireSoulprint(caps, minScore, tool):\n  extractToken + verify + minScore check\n  → MCP error si falla")
+
+    Component(tracker, "Behavior Tracker", "behavior-tracker.ts",
+      "BotSession { did, requests[], toolsUsed,\n  completed, errors, spamWarnings,\n  penalized, rewarded }\n\nextractDIDFromToken(caps):\n  verified DID o anon:<hex>\n\ntrackRequest(did, tool):\n  ventana 60s, >5 req → -1 attest\n\ntrackCompletion(did, tool):\n  3+ tools + 3+ completions + 0 spam → +1\n\ntrackError(did, tool, msg):\n  acumula errores consecutivos")
+
+    Component(identity, "Service Identity", "service-identity.ts",
+      "getServiceKeypair():\n  load/generate Ed25519 keypair\n  persist ~/.soulprint/services/\n           mcp-colombia/keypair.json\n\ngetServiceToken():\n  build SPT score=80\n  creds: [DocumentVerified, FaceMatch,\n  BiometricBound, GitHubLinked]\n  cache 23h en memoria\n\nissueAttestation(targetDid, val, ctx):\n  createAttestation(kp, target, val, ctx)\n  → BotAttestation (Ed25519 signed)")
+
+    Component(submitter, "Attestation Submitter", "behavior-tracker.ts",
+      "submitAttestation(att):\n  GET SOULPRINT_NODE (default: :4888)\n  getServiceToken()\n  POST /reputation/attest\n  body: { attestation, service_spt }\n  timeout: 5000ms\n  catch: log to stderr (non-blocking)")
+  }
+
+  Container(core, "soulprint-core", "", "")
+  ContainerDb(fs, "Identity Store", "", "~/.soulprint/services/mcp-colombia/")
+  System_Ext(node, "Soulprint Validator", "", "")
+
+  Rel(middleware, core, "decodeToken · verifySig · computeScore", "")
+  Rel(tracker, identity, "issueAttestation() si spam/reward", "")
+  Rel(tracker, submitter, "submitAttestation(att)", "")
+  Rel(identity, core, "createAttestation · generateKeypair", "")
+  Rel(identity, fs, "keypair.json persist", "Node.js fs")
+  Rel(submitter, node, "HTTP POST /reputation/attest", "async, non-blocking")
+
+  UpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="1")
+```
+
+---
+
+## Request Lifecycle
 
 ```
-MCP Client
+Bot MCP Client
     │
-    │ tool call + optional capabilities.identity.soulprint
+    │  tool call + capabilities.identity.soulprint (opcional)
     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    withTracking() wrapper                    │
-│                                                             │
-│  1. extractDID(extra?.capabilities)                         │
-│     → "did:key:z6Mk..." (verified) OR "anon:<random>" (none)│
-│                                                             │
-│  2. trackRequest(botDid, toolName)                          │
-│     → check spam window (>5 req/60s?)                       │
-│     → if spam: issue -1 attestation, return error           │
-│     → if ok: record request, continue                       │
-│                                                             │
-│  3. [PREMIUM ONLY] requireSoulprint(capabilities, 95)       │
-│     → verifySoulprint(token, 95)                            │
-│     → if score < 95: return MCP error                       │
-│                                                             │
-│  4. handler(args, botDid)                                   │
-│     → call data API                                         │
-│     → return result                                         │
-│                                                             │
-│  5a. trackCompletion(botDid, toolName)                      │
-│      → if 3+ distinct tools + 3+ completions + no spam:    │
-│           issue +1 attestation                              │
-│                                                             │
-│  5b. [on error] trackError(botDid, toolName, message)       │
-│      → accumulate error count                              │
-│      → if 3+ consecutive errors: log warning               │
-└─────────────────────────────────────────────────────────────┘
+withTracking(toolName, handler)
     │
-    ▼
-MCP Client ← tool result
+    ├─▶ 1. extractDIDFromToken(capabilities)
+    │         └─▶ DID verificado  O  "anon:<hex8>" si no hay token
+    │
+    ├─▶ 2. trackRequest(did, toolName)
+    │         ├─▶ OK → continuar
+    │         └─▶ SPAM (>5 req/60s):
+    │               issueAttestation(did, -1, "spam-detected")
+    │               submitAttestation(att)  ← async
+    │               return { isError: true, content: "⛔ Rate limit..." }
+    │
+    ├─▶ 3. [Solo trabajo_aplicar] requireSoulprint(capabilities, 95)
+    │         ├─▶ score >= 95 → continuar
+    │         └─▶ score < 95 → return MCP error con score requerido
+    │
+    ├─▶ 4. handler(args, botDid)
+    │         └─▶ llama API externa → result
+    │
+    ├─▶ 5a. trackCompletion(did, toolName)
+    │          └─▶ si (completed≥3 && tools≥3 && spam=0 && !rewarded):
+    │                issueAttestation(did, +1, "normal-usage-pattern")
+    │                submitAttestation(att)  ← async
+    │
+    └─▶ 5b. [si error] trackError(did, toolName, msg)
+
+Bot MCP Client  ←── resultado de la herramienta
 ```
 
 ---
 
-## 3. Soulprint Integration
+## Behavior Tracker
 
-### middleware.ts
-
-```typescript
-// Token extraction — checks multiple locations in order
-extractToken(capabilities):
-  1. capabilities?.identity?.soulprint     ← MCP standard
-  2. process.env.SOULPRINT_TOKEN           ← env var fallback
-  3. null                                   ← anonymous
-
-// Token verification
-verifySoulprint(token, minScore?):
-  1. decodeToken(token)                    ← base64url decode
-  2. verifySig(decoded)                    ← Ed25519 verify
-  3. check: decoded.expires > now          ← not expired
-  4. check: decoded.score >= minScore      ← if minScore set
-  → returns: { ok: true, ctx } OR { ok: false, error }
-
-// Full requirement check (used by trabajo_aplicar)
-requireSoulprint(capabilities, minScore, toolName):
-  1. extractToken(capabilities)
-  2. if null: return { ok: false, mcpError }
-  3. verifySoulprint(token, minScore)
-  4. if not ok: return { ok: false, mcpError with score info }
-  5. return { ok: true, ctx }
-```
-
-### DID extraction for anonymous bots
-
-```typescript
-function extractDIDFromToken(capabilities) {
-  const token = extractToken(capabilities);
-  if (!token) return `anon:${randomHex(8)}`;     // anonymous session
-  const decoded = decodeToken(token);
-  if (!decoded) return `anon:${randomHex(8)}`;   // invalid token
-  return decoded.did;                             // verified DID
-}
-```
-
-Anonymous bots can still use all standard tools — they just can't access premium endpoints and their reputation isn't tracked across services (anonymous DIDs are ephemeral).
-
-### Score requirements by tool
-
-| Tool | Min Score | Why |
-|---|---|---|
-| `ml_buscar_productos` | None | Public search |
-| `ml_detalle_producto` | None | Public data |
-| `viajes_buscar_vuelos` | None | Public search |
-| `viajes_buscar_hotel` | None | Public search |
-| `finanzas_comparar_cdt` | None | Public rates |
-| `finanzas_simular_credito` | None | Calculator |
-| `finanzas_comparar_cuentas` | None | Public rates |
-| `inmuebles_buscar` | None | Public listings |
-| `soulprint_status` | None | Debug tool |
-| **`trabajo_aplicar`** | **95** | Verified human required |
-
----
-
-## 4. Behavior Tracker
-
-### Session structure
+### Estructura de sesión
 
 ```typescript
 interface BotSession {
   did:          string;
-  requests:     number[];   // unix timestamps of requests in last 60s
-  toolsUsed:    Set<string>;
-  completed:    number;     // successful completions
-  errors:       number;     // consecutive errors (reset on completion)
+  requests:     number[];    // timestamps en ventana de 60s
+  toolsUsed:    Set<string>; // herramientas distintas usadas
+  completed:    number;      // completions exitosos
+  errors:       number;      // errores consecutivos (reset en completion)
   lastRequest:  number;
   spamWarnings: number;
-  penalized:    boolean;    // true if -1 already issued this session
-  rewarded:     boolean;    // true if +1 already issued this session
+  penalized:    boolean;     // -1 ya emitido esta sesión
+  rewarded:     boolean;     // +1 ya emitido esta sesión
 }
 ```
 
-### Spam detection
+### Regla anti-spam
 
 ```
-SPAM_THRESHOLD = 5 requests
-SPAM_WINDOW_MS = 60,000ms (60 seconds)
+Umbral: 5 requests en ventana de 60s
 
 trackRequest(did, tool):
-  1. Push timestamp to session.requests
-  2. Filter: remove timestamps older than 60s
-  3. if requests.length > 5:
-       session.spamWarnings++
-       if !session.penalized:
-         issueAttestation(did, -1, "spam-detected")
-         submitAttestation(att)  // async, fire-and-forget
-         session.penalized = true
-       return { allowed: false, reason: "Rate limit..." }
-  4. session.toolsUsed.add(tool)
-  5. return { allowed: true }
+  Push timestamp → filter timestamps > 60s atrás
+  if requests.length > 5:
+    if !session.penalized:
+      issueAttestation(did, -1, "spam-detected")
+      session.penalized = true
+    return { allowed: false }
+  session.toolsUsed.add(tool)
+  return { allowed: true }
 ```
 
-### Reward logic
+### Regla de recompensa
 
 ```
-REWARD_MIN_TOOLS       = 3 distinct tools
-REWARD_MIN_COMPLETIONS = 3
+Condición: completed >= 3 AND toolsUsed.size >= 3
+           AND spamWarnings == 0 AND !rewarded
 
 trackCompletion(did, tool):
   session.completed++
-  session.errors = 0   // reset consecutive errors
-  if (session.completed >= 3
-      && session.toolsUsed.size >= 3
-      && session.spamWarnings === 0
-      && !session.rewarded):
+  session.errors = 0
+  if condicion_cumplida:
     issueAttestation(did, +1, "normal-usage-pattern")
-    submitAttestation(att)
     session.rewarded = true
 ```
 
-### Attestation submission
-
-```typescript
-async submitAttestation(att):
-  const nodeUrl = process.env.SOULPRINT_NODE ?? "http://localhost:4888";
-  const serviceToken = getServiceToken();
-  try:
-    POST ${nodeUrl}/reputation/attest
-    body: { attestation: att, service_spt: serviceToken }
-    timeout: 5000ms
-  catch:
-    console.error("[soulprint] offline — attestation logged to stderr")
-    // Non-blocking: tool execution continues regardless
-```
-
-Sessions are **in-memory** (Map keyed by DID). They reset when the server restarts. This is intentional — the validator network provides cross-session persistence.
-
 ---
 
-## 5. Tool Architecture
+## Tool Implementations
 
-### withTracking() wrapper
-
-```typescript
-function withTracking(toolName: string, handler: ToolHandler): ToolHandler {
-  return async (args, extra) => {
-    const botDid = extractDIDFromToken(extra?.capabilities);
-
-    // Spam check
-    const check = trackRequest(botDid, toolName);
-    if (!check.allowed) {
-      return {
-        content: [{ type: "text", text: `⛔ ${check.reason}` }],
-        isError: true,
-      };
-    }
-
-    try {
-      const result = await handler(args, botDid);
-      trackCompletion(botDid, toolName);
-      return result;
-    } catch (err) {
-      trackError(botDid, toolName, err.message);
-      throw err;
-    }
-  };
-}
-```
-
-### Tool implementations
-
-```
-ml_buscar_productos
-  ├── Primary:  GET https://api.mercadolibre.com/sites/MCO/search
-  │             ?q=<query>&limit=10
-  │             Headers: Authorization: Bearer <ML_TOKEN>
-  └── Fallback: Brave Search API
-                GET https://api.search.brave.com/res/v1/web/search
-                ?q=<query> site:articulo.mercadolibre.com.co
-                (used when ML API returns 403 from server IP)
-
-ml_detalle_producto
-  └── GET https://api.mercadolibre.com/items/<id>
-
-viajes_buscar_vuelos / viajes_buscar_hotel
-  └── Booking.com via Awin affiliate network
-      GET https://api.awin.com/publishers/2784246/...
-      Merchant: 6776 (Booking.com Colombia)
-
-finanzas_comparar_cdt / finanzas_simular_credito / finanzas_comparar_cuentas
-  └── Static/scraped data from Colombian financial institutions
-      (Bancolombia, Davivienda, BBVA, Nequi, Nubank, etc.)
-
-inmuebles_buscar
-  └── Ciencuadras JSON-LD scraping
-      GET https://www.ciencuadras.com/busqueda?...
-      Extract: application/ld+json → ListingPage → offers[]
-
-trabajo_aplicar  [PREMIUM — score >= 95]
-  ├── requireSoulprint(capabilities, 95)
-  ├── Verify: ctx.score >= 95
-  ├── Build application object:
-  │     application_id: SP-<timestamp>-<did_suffix>
-  │     applicant: { did, score, level, verified: true }
-  │     trust_guarantees: { human_verified, no_spam_history, zkp }
-  └── Return verified application (no PII)
-
-soulprint_status  [DEBUG]
-  └── Returns: { token_present, did, score, identity, bot_rep,
-                 level, country, session_stats, node_url }
-```
-
----
-
-## 6. Data Sources
-
-| Tool | Source | Auth | Fallback |
+| Tool | Fuente de datos | Auth | Fallback |
 |---|---|---|---|
-| ML search | MercadoLibre API (MCO) | OAuth2 client_credentials | Brave Search |
-| ML detail | MercadoLibre API | OAuth2 | None |
-| Flights | Booking.com / Awin | Awin token | None |
-| Hotels | Booking.com / Awin | Awin token | None |
-| Finanzas | Static + scraped | None | None |
-| Inmuebles | Ciencuadras JSON-LD | None (public) | None |
-| trabajo_aplicar | Internal | Soulprint ≥ 95 | N/A |
+| `ml_buscar_productos` | MercadoLibre API (MCO) | OAuth2 client_credentials | Brave Search API |
+| `ml_detalle_producto` | MercadoLibre API | OAuth2 | — |
+| `viajes_buscar_vuelos` | Booking.com vía Awin | Awin token | — |
+| `viajes_buscar_hotel` | Booking.com vía Awin | Awin token | — |
+| `finanzas_comparar_cdt` | Datos estáticos + scraping | — | — |
+| `finanzas_simular_credito` | Cálculo interno | — | — |
+| `finanzas_comparar_cuentas` | Datos estáticos | — | — |
+| `inmuebles_buscar` | Ciencuadras JSON-LD | — (público) | — |
+| `soulprint_status` | Token + sesión en memoria | Opcional | — |
+| `trabajo_aplicar` | Interno | **SPT score ≥ 95** | — |
 
 ### ML OAuth flow
 
 ```
-Startup:
-  POST https://api.mercadolibre.com/oauth/token
-  body: grant_type=client_credentials
-        &client_id=<ML_CLIENT_ID>
-        &client_secret=<ML_CLIENT_SECRET>
-  → access_token (valid ~6h)
-  → stored in memory, auto-refreshed on 401
+Arranque:
+  POST api.mercadolibre.com/oauth/token
+    grant_type=client_credentials
+    client_id, client_secret
+  → access_token (válido ~6h)
+  → en memoria; auto-refresh si 401
+
+Fallback Brave:
+  GET api.search.brave.com/res/v1/web/search
+    ?q=<query> site:articulo.mercadolibre.com.co
+  → 3 resultados scrapeados (título, precio, URL)
 ```
 
 ---
 
-## 7. Service Identity
+## Service Identity
 
-mcp-colombia-hub has its own **Soulprint DID and service token**. This is what qualifies it to issue attestations.
+mcp-colombia-hub tiene su propio DID Soulprint — esto lo habilita para emitir attestations.
 
 ```typescript
-// service-identity.ts
+// Por qué score = 80:
+const serviceCredentials = [
+  "DocumentVerified",  // +20
+  "FaceMatch",         // +16
+  "GitHubLinked",      // +16
+  "BiometricBound",    // +8
+  // identity_score = 60
+];
+const botRep = { score: 20 };  // máximo
+// total = 60 + 20 = 80
 
-getServiceKeypair():
-  1. Check ~/.soulprint/services/mcp-colombia/keypair.json
-  2. If exists: load and return
-  3. If not: generate Ed25519 keypair, save (mode 0600), return
-  → { did: "did:key:z6Mk...", publicKey, privateKey }
-
-getServiceToken():
-  1. If cached token not expired: return cached
-  2. Build token with credentials that yield score = 80:
-       ["DocumentVerified","FaceMatch","BiometricBound","GitHubLinked"]
-       identity = 20+16+8+16 = 60
-       bot_rep  = { score: 20, ... }
-       total    = 80
-  3. Sign with service keypair
-  4. Cache for 23h
-  → base64url SPT string
-
-issueAttestation(targetDid, value, context):
-  1. getServiceKeypair()
-  2. createAttestation(kp, targetDid, value, context)
-  → BotAttestation (Ed25519 signed)
+// Un nodo validador exige score >= 60 para aceptar attestations
+// → El servicio pasa el guard con 80 ✓
 ```
 
-**Why score = 80?**  
-The service achieves score 80 by combining 4 credentials (60 pts identity) + max reputation (20 pts). This gives it authority to issue attestations (requires ≥ 60) with significant weight.
+El keypair del servicio se genera en el primer arranque y persiste en `~/.soulprint/services/mcp-colombia/keypair.json` (mode 0600). El token SPT se cachea 23h en memoria.
 
 ---
 
-## 8. File Structure
+## Configuration
 
-```
-mcp-colombia/
-├── src/
-│   ├── index.ts                 Main MCP server (startup + tool registration)
-│   ├── tools/
-│   │   ├── mercadolibre.ts      ML search + detail + OAuth
-│   │   ├── booking.ts           Flights + hotels (Booking/Awin)
-│   │   ├── finanzas.ts          CDT + credit + accounts
-│   │   └── inmuebles.ts         Ciencuadras JSON-LD
-│   └── soulprint/
-│       ├── service-identity.ts  Service DID + token + attestation issuer
-│       ├── behavior-tracker.ts  Spam detection + reward logic + sessions
-│       └── middleware.ts        extractToken + verifySoulprint + requireSoulprint
-├── tests/
-│   ├── soulprint.test.ts        37 tests (16 unit + 12 integration + 9 pen)
-│   └── integration-runner.js    Nightly runner (431 tests × 5 modes)
-├── dist/                        TypeScript compiled output
-├── package.json                 v1.2.0
-├── tsconfig.json                ES2022, NodeNext modules
-├── README.md
-└── ARCHITECTURE.md              ← this file
-```
+### Variables de entorno
 
----
-
-## 9. Configuration
-
-### Environment variables
-
-| Variable | Default | Description |
+| Variable | Default | Descripción |
 |---|---|---|
-| `SOULPRINT_TOKEN` | — | SPT token from the calling bot |
-| `SOULPRINT_NODE` | `http://localhost:4888` | Soulprint validator node URL |
+| `SOULPRINT_TOKEN` | — | Token SPT del bot usuario |
+| `SOULPRINT_NODE` | `http://localhost:4888` | URL del nodo validador |
 | `ML_CLIENT_ID` | — | MercadoLibre OAuth client ID |
 | `ML_CLIENT_SECRET` | — | MercadoLibre OAuth secret |
-| `BRAVE_API_KEY` | — | Brave Search fallback (ML 403 bypass) |
+| `BRAVE_API_KEY` | — | Fallback búsqueda ML |
 | `AWIN_TOKEN` | — | Awin affiliate API token |
 
-### MCP client config
+### Config MCP
 
 ```json
 {
@@ -425,10 +358,10 @@ mcp-colombia/
       "command": "npx",
       "args": ["-y", "mcp-colombia-hub"],
       "env": {
-        "SOULPRINT_TOKEN": "<bot-spt-token>",
-        "ML_CLIENT_ID": "<id>",
-        "ML_CLIENT_SECRET": "<secret>",
-        "BRAVE_API_KEY": "<key>"
+        "SOULPRINT_TOKEN": "<bot-spt>",
+        "ML_CLIENT_ID":    "<id>",
+        "ML_CLIENT_SECRET":"<secret>",
+        "BRAVE_API_KEY":   "<key>"
       }
     }
   }
@@ -437,45 +370,35 @@ mcp-colombia/
 
 ---
 
-## 10. Error Handling
+## Error Handling
 
-### MCP error format
+### Formato MCP
 
 ```typescript
-// Standard error return for MCP tools
-{
-  content: [{ type: "text", text: "Error message" }],
-  isError: true
-}
+// Todos los errores usan este formato
+{ content: [{ type: "text", text: "..." }], isError: true }
 ```
 
-### Error categories
+### Categorías
 
-| Category | HTTP equiv | When |
-|---|---|---|
-| Spam blocked | 429 | > 5 requests in 60s |
-| No identity | 401 | trabajo_aplicar without token |
-| Score too low | 403 | Score < 95 for premium endpoint |
-| API failure | 502 | Upstream API unavailable |
-| Invalid params | 400 | Missing required tool args |
+| Categoría | Cuándo |
+|---|---|
+| Spam bloqueado (429) | > 5 requests en 60s |
+| Sin identidad (401) | `trabajo_aplicar` sin token SPT |
+| Score insuficiente (403) | Score < 95 para endpoint premium |
+| API fallida (502) | API externa no responde |
+| Parámetros inválidos (400) | Args obligatorios faltantes |
 
-### Soulprint node offline
+### Degradación graceful sin nodo Soulprint
 
-If the Soulprint validator node is unreachable, attestations are logged to stderr but **do not block tool execution**. The service degrades gracefully — tools continue working, reputation updates are deferred.
+Si el nodo validador está offline, las attestations se loguean en stderr pero **no bloquean la ejecución** de las herramientas. El servidor sigue operando; la reputación se pierde en esa sesión pero ningún usuario lo nota.
 
 ```
-[soulprint] Validator node offline — attestation queued to stderr
-{
-  "issuer_did": "did:key:z6Mk...",
-  "target_did": "did:key:z6Mk...",
-  "value": 1,
-  "context": "normal-usage-pattern",
-  ...
-}
+[soulprint] Validator offline — attestation dropped:
+{ issuer: "did:key:z6Mk...", target: "did:key:z6Mk...", value: 1, ... }
 ```
 
 ---
 
-*Last updated: v1.2.0 — February 2026*  
-*Soulprint protocol: https://github.com/manuelariasfz/soulprint*  
-*GitHub: https://github.com/manuelariasfz/mcp-colombia*
+*v1.2.0 — Febrero 2026 · https://github.com/manuelariasfz/mcp-colombia*  
+*Soulprint: https://github.com/manuelariasfz/soulprint*
