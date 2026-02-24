@@ -1,0 +1,10 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "name": "mcp-colombia",
+  "description": "MCP server for Colombian products, travel and finance — MercadoLibre, Booking.com hotels & flights, CDTs, loans and savings accounts in COP",
+  "maintainers": ["manuelariasfz"],
+  "license": "MIT",
+  "categories": ["e-commerce", "travel", "finance"],
+  "languages": ["TypeScript"],
+  "tags": ["colombia", "mercadolibre", "booking", "finanzas", "cdt", "credito", "hoteles", "vuelos"]
+}

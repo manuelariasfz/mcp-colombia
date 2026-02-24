@@ -1,0 +1,21 @@
+name: mcp-colombia
+description: "🇨🇴 MCP server for Colombia — MercadoLibre products, Booking.com hotels, flights, CDTs, loans and savings accounts"
+license: MIT
+build:
+  dockerfile: false
+startCommand:
+  type: stdio
+  command: npx
+  args: ["-y", "mcp-colombia"]
+  configSchema:
+    type: object
+    properties:
+      ML_CLIENT_ID:
+        type: string
+        description: "MercadoLibre App ID (optional — for real-time API)"
+      ML_CLIENT_SECRET:
+        type: string
+        description: "MercadoLibre Client Secret (optional)"
+      BRAVE_API_KEY:
+        type: string
+        description: "Brave Search API key (optional — for product search fallback)"
