@@ -8,6 +8,10 @@ import { searchHotels, searchFlights }      from "./tools/booking.js";
 import { compararCDT, simularCredito, compararCuentas } from "./tools/finanzas.js";
 import { buscarInmuebles }                  from "./tools/inmuebles.js";
 import { buscarVacantes, getPortalLinks }   from "./tools/trabajo.js";
+import {
+  isVerifiedOnChain, getMCPEntry, getAllMCPEntries, getVerifiedMCPEntries,
+  getRegistryInfo, verifyMCPOnChain, revokeMCPOnChain, registerMCPOnChain,
+} from "./tools/mcp-registry.js";
 
 import { trackRequest, trackCompletion, trackError, getSessionStatus } from "./soulprint/behavior-tracker.js";
 import { requireSoulprint, extractToken, verifySoulprint }              from "./soulprint/middleware.js";
@@ -384,6 +388,157 @@ server.tool(
         }, null, 2),
       }],
     };
+  }
+);
+
+// ── MCPRegistry — consulta pública ───────────────────────────────────────────
+server.tool(
+  "mcp_estado",
+  "Consulta si un servidor MCP está verificado on-chain en MCPRegistry (Base Sepolia). Pasa una dirección 0x o 'mcp-colombia' para el propio servidor.",
+  {
+    mcp_address: z.string().describe("Dirección 0x del MCP, o 'mcp-colombia' para el hub colombiano"),
+  },
+  async (args: any) => {
+    const KNOWN: Record<string, string> = {
+      "mcp-colombia":     "0x0755A3001F488da00088838c4a068dF7f883ad87",
+      "mcp-colombia-hub": "0x0755A3001F488da00088838c4a068dF7f883ad87",
+    };
+    const addr   = KNOWN[args.mcp_address.toLowerCase()] ?? args.mcp_address;
+    const [entry, info] = await Promise.all([getMCPEntry(addr), getRegistryInfo()]);
+
+    if (!entry) {
+      return { content: [{ type: "text", text: JSON.stringify({
+        address:    addr,
+        registered: false,
+        verified:   false,
+        message:    "Este MCP no está registrado en MCPRegistry.",
+        registry:   info,
+      }, null, 2) }] };
+    }
+
+    return { content: [{ type: "text", text: JSON.stringify({
+      address:      addr,
+      name:         entry.name,
+      url:          entry.url,
+      category:     entry.category,
+      description:  entry.description,
+      registered:   true,
+      verified:     entry.verified,
+      registered_at: new Date(entry.registeredAt * 1000).toISOString(),
+      verified_at:  entry.verifiedAt > 0 ? new Date(entry.verifiedAt * 1000).toISOString() : null,
+      revoked_at:   entry.revokedAt  > 0 ? new Date(entry.revokedAt  * 1000).toISOString() : null,
+      badge:        entry.verified ? "✅ VERIFICADO por superAdmin on-chain" : "⏳ Registrado, pendiente verificación",
+      registry:     info,
+    }, null, 2) }] };
+  }
+);
+
+server.tool(
+  "mcp_lista_verificados",
+  "Lista todos los servidores MCP verificados on-chain en MCPRegistry (Base Sepolia). Útil para descubrir MCPs de confianza.",
+  {},
+  async () => {
+    const [verified, info] = await Promise.all([getVerifiedMCPEntries(), getRegistryInfo()]);
+
+    return { content: [{ type: "text", text: JSON.stringify({
+      total_verified: verified.length,
+      registry:       info,
+      mcps: verified.map(e => ({
+        address:      e.address,
+        name:         e.name,
+        url:          e.url,
+        category:     e.category,
+        description:  e.description,
+        verified_at:  new Date(e.verifiedAt * 1000).toISOString(),
+        badge:        "✅ VERIFICADO",
+      })),
+    }, null, 2) }] };
+  }
+);
+
+server.tool(
+  "mcp_registrar",
+  "Registra un nuevo servidor MCP en MCPRegistry on-chain. Cualquiera puede registrarse; la verificación la hace el superAdmin.",
+  {
+    mcp_address:  z.string().describe("Dirección 0x que identificará tu MCP"),
+    name:         z.string().describe("Nombre del servidor (ej: 'Mi MCP Finance')"),
+    url:          z.string().url().describe("URL base del servidor"),
+    category:     z.enum(["finance","travel","jobs","ecommerce","general"]).default("general"),
+    description:  z.string().max(300).optional().describe("Descripción corta"),
+    owner_key:    z.string().describe("Llave privada 0x de tu wallet (para firmar la tx)"),
+  },
+  async (args: any) => {
+    if (!args.owner_key.startsWith("0x") || args.owner_key.length !== 66) {
+      return { content: [{ type: "text", text: JSON.stringify({ error: "owner_key inválida — debe ser hex de 32 bytes (0x...)" }) }], isError: true };
+    }
+
+    const result = await registerMCPOnChain({
+      ownerPrivateKey: args.owner_key,
+      mcpAddress:      args.mcp_address,
+      name:            args.name,
+      url:             args.url,
+      category:        args.category,
+      description:     args.description ?? "",
+    });
+
+    return { content: [{ type: "text", text: JSON.stringify({
+      ...result,
+      message: result.success
+        ? `✅ MCP registrado. Ahora solicita verificación al superAdmin. TX: https://sepolia.basescan.org/tx/${result.txHash}`
+        : `❌ Error al registrar: ${result.error}`,
+      next_step: "Contacta al superAdmin para que verifique tu MCP.",
+    }, null, 2) }] };
+  }
+);
+
+// ── MCPRegistry — admin (requiere ADMIN_PRIVATE_KEY en env) ──────────────────
+server.tool(
+  "mcp_verificar",
+  "🔐 ADMIN — Verifica un MCP on-chain. Requiere ADMIN_PRIVATE_KEY en el entorno del servidor.",
+  {
+    mcp_address: z.string().describe("Dirección 0x del MCP a verificar"),
+  },
+  async (args: any) => {
+    if (!process.env.ADMIN_PRIVATE_KEY) {
+      return { content: [{ type: "text", text: JSON.stringify({
+        error: "ADMIN_PRIVATE_KEY no configurada en este servidor.",
+        hint:  "Configura la variable de entorno ADMIN_PRIVATE_KEY en el servidor MCP.",
+      }) }], isError: true };
+    }
+
+    const result = await verifyMCPOnChain(args.mcp_address);
+
+    return { content: [{ type: "text", text: JSON.stringify({
+      ...result,
+      message: result.success
+        ? `✅ MCP ${args.mcp_address} VERIFICADO on-chain. TX: https://sepolia.basescan.org/tx/${result.txHash}`
+        : `❌ Error: ${result.error}`,
+    }, null, 2) }] };
+  }
+);
+
+server.tool(
+  "mcp_revocar",
+  "🔐 ADMIN — Revoca la verificación de un MCP on-chain. Requiere ADMIN_PRIVATE_KEY en el entorno.",
+  {
+    mcp_address: z.string().describe("Dirección 0x del MCP a revocar"),
+    razon:       z.string().describe("Motivo de la revocación (queda on-chain)"),
+  },
+  async (args: any) => {
+    if (!process.env.ADMIN_PRIVATE_KEY) {
+      return { content: [{ type: "text", text: JSON.stringify({
+        error: "ADMIN_PRIVATE_KEY no configurada en este servidor.",
+      }) }], isError: true };
+    }
+
+    const result = await revokeMCPOnChain(args.mcp_address, args.razon);
+
+    return { content: [{ type: "text", text: JSON.stringify({
+      ...result,
+      message: result.success
+        ? `✅ Verificación de ${args.mcp_address} REVOCADA. Razón: "${args.razon}". TX: https://sepolia.basescan.org/tx/${result.txHash}`
+        : `❌ Error: ${result.error}`,
+    }, null, 2) }] };
   }
 );
 
