@@ -10,7 +10,7 @@ import { buscarInmuebles }                  from "./tools/inmuebles.js";
 import { buscarVacantes, getPortalLinks }   from "./tools/trabajo.js";
 import {
   isVerifiedOnChain, getMCPEntry, getAllMCPEntries, getVerifiedMCPEntries,
-  getRegistryInfo, verifyMCPOnChain, revokeMCPOnChain, registerMCPOnChain,
+  getRegistryInfo, registerMCPOnChain,
 } from "./tools/mcp-registry.js";
 
 import { trackRequest, trackCompletion, trackError, getSessionStatus } from "./soulprint/behavior-tracker.js";
@@ -492,55 +492,6 @@ server.tool(
 );
 
 // ── MCPRegistry — admin (requiere ADMIN_PRIVATE_KEY en env) ──────────────────
-server.tool(
-  "mcp_verificar",
-  "🔐 ADMIN — Verifica un MCP on-chain. Requiere ADMIN_PRIVATE_KEY en el entorno del servidor.",
-  {
-    mcp_address: z.string().describe("Dirección 0x del MCP a verificar"),
-  },
-  async (args: any) => {
-    if (!process.env.ADMIN_PRIVATE_KEY) {
-      return { content: [{ type: "text", text: JSON.stringify({
-        error: "ADMIN_PRIVATE_KEY no configurada en este servidor.",
-        hint:  "Configura la variable de entorno ADMIN_PRIVATE_KEY en el servidor MCP.",
-      }) }], isError: true };
-    }
-
-    const result = await verifyMCPOnChain(args.mcp_address);
-
-    return { content: [{ type: "text", text: JSON.stringify({
-      ...result,
-      message: result.success
-        ? `✅ MCP ${args.mcp_address} VERIFICADO on-chain. TX: https://sepolia.basescan.org/tx/${result.txHash}`
-        : `❌ Error: ${result.error}`,
-    }, null, 2) }] };
-  }
-);
-
-server.tool(
-  "mcp_revocar",
-  "🔐 ADMIN — Revoca la verificación de un MCP on-chain. Requiere ADMIN_PRIVATE_KEY en el entorno.",
-  {
-    mcp_address: z.string().describe("Dirección 0x del MCP a revocar"),
-    razon:       z.string().describe("Motivo de la revocación (queda on-chain)"),
-  },
-  async (args: any) => {
-    if (!process.env.ADMIN_PRIVATE_KEY) {
-      return { content: [{ type: "text", text: JSON.stringify({
-        error: "ADMIN_PRIVATE_KEY no configurada en este servidor.",
-      }) }], isError: true };
-    }
-
-    const result = await revokeMCPOnChain(args.mcp_address, args.razon);
-
-    return { content: [{ type: "text", text: JSON.stringify({
-      ...result,
-      message: result.success
-        ? `✅ Verificación de ${args.mcp_address} REVOCADA. Razón: "${args.razon}". TX: https://sepolia.basescan.org/tx/${result.txHash}`
-        : `❌ Error: ${result.error}`,
-    }, null, 2) }] };
-  }
-);
 
 // ── Arrancar servidor ─────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();

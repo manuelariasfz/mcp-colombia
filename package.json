@@ -1,6 +1,6 @@
 {
   "name": "mcp-colombia-hub",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "MCP server for Colombian products, travel and finance — MercadoLibre, Booking.com hotels & flights, CDTs, loans and savings accounts",
   "type": "module",
   "main": "dist/index.js",
