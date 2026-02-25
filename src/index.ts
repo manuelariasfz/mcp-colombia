@@ -7,6 +7,7 @@ import { searchProducts, getProduct }       from "./tools/mercadolibre.js";
 import { searchHotels, searchFlights }      from "./tools/booking.js";
 import { compararCDT, simularCredito, compararCuentas } from "./tools/finanzas.js";
 import { buscarInmuebles }                  from "./tools/inmuebles.js";
+import { buscarVacantes, getPortalLinks }   from "./tools/trabajo.js";
 
 import { trackRequest, trackCompletion, trackError, getSessionStatus } from "./soulprint/behavior-tracker.js";
 import { requireSoulprint, extractToken, verifySoulprint }              from "./soulprint/middleware.js";
@@ -228,49 +229,81 @@ server.tool(
       };
     }
 
-    // Generar aplicación verificada
     const applicationId = `SP-${Date.now().toString(36).toUpperCase()}-${ctx.did.slice(-6).toUpperCase()}`;
     const now           = new Date().toISOString();
+
+    // ── Buscar vacantes reales que coincidan con cargo + ciudad ───────────
+    const [vacantes, portales] = await Promise.all([
+      buscarVacantes(args.cargo, args.ciudad, args.modalidad ?? "remoto"),
+      Promise.resolve(getPortalLinks(args.cargo, args.ciudad, args.modalidad ?? "remoto")),
+    ]);
+
+    // Vacante más relevante (primera de la lista, si existe)
+    const mejorVacante = vacantes[0] ?? null;
 
     const application = {
       application_id:    applicationId,
       status:            "submitted",
       timestamp:         now,
 
-      // Identidad verificada — sin PII expuesto
-      applicant: {
-        did:           ctx.did,
+      // ── Vacante a la que se aplica ─────────────────────────────────────
+      vacante: mejorVacante
+        ? {
+            titulo:       mejorVacante.titulo,
+            empresa:      mejorVacante.empresa,
+            ciudad:       mejorVacante.ciudad,
+            portal:       mejorVacante.portal,
+            link_aplicar: mejorVacante.link,         // ← link directo de la vacante
+            salario:      mejorVacante.salario,
+            descripcion:  mejorVacante.descripcion,
+          }
+        : {
+            cargo:        args.cargo,
+            ciudad:       args.ciudad,
+            modalidad:    args.modalidad,
+            nota:         "No se encontró vacante específica — usa los links de búsqueda abajo",
+          },
+
+      // ── Links de aplicación por portal ────────────────────────────────
+      donde_aplicar: {
+        ...portales,
+        nota: "Abre cualquier portal para ver vacantes disponibles para " + args.cargo,
+      },
+
+      // ── Otras vacantes encontradas ─────────────────────────────────────
+      otras_vacantes: vacantes.slice(1).map(v => ({
+        titulo:   v.titulo,
+        empresa:  v.empresa,
+        portal:   v.portal,
+        salario:  v.salario,
+        link:     v.link,
+      })),
+
+      // ── Identidad verificada del candidato ────────────────────────────
+      candidato: {
+        did:             ctx.did,
         soulprint_score: ctx.score,
-        identity_score:  ctx.identity,
-        reputation_score: ctx.botRep,
-        trust_level:   ctx.level,
-        country:       ctx.country ?? "CO",
-        verified:      true,
+        trust_level:     ctx.level,
+        human_verified:  ctx.identity >= 36,
+        reputation:      ctx.botRep,
+        cv_url:          args.cv_url ?? null,
+        salario_esp:     args.salario_esp ?? null,
+        mensaje:         args.mensaje ?? null,
+        country:         ctx.country ?? "CO",
       },
 
-      // Datos de la aplicación
-      position: {
-        cargo:       args.cargo,
-        ciudad:      args.ciudad,
-        modalidad:   args.modalidad,
-        salario_esp: args.salario_esp,
-        cv_url:      args.cv_url,
-        mensaje:     args.mensaje,
-      },
-
-      // Garantías del ecosistema
       trust_guarantees: {
-        human_verified:       ctx.identity >= 36,   // DocumentVerified + FaceMatch
-        behavior_score:       ctx.botRep,
-        no_spam_history:      ctx.botRep >= 8,
-        identity_zkp:         true,                  // ZK proof de identidad
-        protocol:             "Soulprint SIP-v0.1",
+        human_verified:  ctx.identity >= 36,
+        no_spam_history: ctx.botRep >= 8,
+        identity_zkp:    true,
+        protocol:        "Soulprint SIP-v0.1",
       },
 
-      message: `✅ Aplicación enviada con identidad verificada Soulprint.
-Score: ${ctx.score}/100 | Identidad: ${ctx.level} | Reputación: ${ctx.botRep}/20
-Tu candidatura destaca porque está respaldada por un humano verificado — el empleador sabe que no eres un bot de spam.
-Application ID: ${applicationId}`,
+      resumen: `✅ Aplicación lista — ID: ${applicationId}
+Cargo: ${args.cargo} | Ciudad: ${args.ciudad} | Modalidad: ${args.modalidad ?? "remoto"}
+${mejorVacante ? `📌 Vacante encontrada: "${mejorVacante.titulo}" en ${mejorVacante.empresa ?? mejorVacante.portal}
+🔗 Aplicar aquí: ${mejorVacante.link}` : `🔍 Busca vacantes en: ${portales.elempleo}`}
+Score Soulprint: ${ctx.score}/100 — candidato humano verificado`,
     };
 
     trackCompletion(ctx.did, "trabajo_aplicar");
