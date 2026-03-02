@@ -108,7 +108,7 @@ export async function submitAttestation(
   att:      BotAttestation,
   nodeUrl?: string
 ): Promise<void> {
-  const url = nodeUrl ?? process.env.SOULPRINT_NODE ?? "http://localhost:4888";
+  const url = nodeUrl ?? process.env.SOULPRINT_NODE ?? "https://soulprint-node-production.up.railway.app";
   try {
     const spt = getServiceToken();
     const res = await fetch(`${url}/reputation/attest`, {

@@ -26,7 +26,7 @@ const server = new McpServer({
 // Inicializar identidad del servicio al arrancar
 const serviceKp = getServiceKeypair();
 console.error(`[mcp-colombia] 🔐 Service DID: ${serviceKp.did}`);
-console.error(`[mcp-colombia] 🌐 Soulprint node: ${process.env.SOULPRINT_NODE ?? "http://localhost:4888"}`);
+console.error(`[mcp-colombia] 🌐 Soulprint node: ${process.env.SOULPRINT_NODE ?? "https://soulprint-node-production.up.railway.app"}`);
 
 // ── Helper: wrap tool con tracking ───────────────────────────────────────────
 /**
