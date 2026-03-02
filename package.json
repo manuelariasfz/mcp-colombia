@@ -1,6 +1,6 @@
 {
   "name": "mcp-colombia-hub",
-  "version": "1.2.4",
+  "version": "1.3.0",
   "description": "MCP server for Colombian products, travel and finance — MercadoLibre, Booking.com hotels & flights, CDTs, loans and savings accounts",
   "type": "module",
   "main": "dist/index.js",
@@ -55,9 +55,12 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "axios": "^1.6.0",
     "ethers": "^6.16.0",
-    "soulprint-core": "^0.1.3",
-    "soulprint-mcp": "^0.1.3",
+    "soulprint-core": "^0.1.11",
+    "soulprint-mcp": "^0.1.6",
     "zod": "^3.22.0"
+  },
+  "optionalDependencies": {
+    "soulprint-network": "^0.6.4"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -20,7 +20,7 @@ import { getServiceKeypair }                                            from "./
 // ── Servidor MCP ──────────────────────────────────────────────────────────────
 const server = new McpServer({
   name:    "mcp-colombia",
-  version: "1.2.0",
+  version: "1.3.0",
 });
 
 // Inicializar identidad del servicio al arrancar
@@ -351,7 +351,13 @@ server.tool(
 
     const { ctx }   = result;
     const session   = getSessionStatus(ctx.did);
-    const nodeUrl   = process.env.SOULPRINT_NODE ?? "http://localhost:4888";
+    const nodeUrl   = process.env.SOULPRINT_NODE ?? "https://soulprint-node-production.up.railway.app";
+
+    // Fetch live node info from the validator
+    let nodeInfo = null;
+    try {
+      nodeInfo = await fetch(`${nodeUrl}/info`).then(r => r.json()).catch(() => null);
+    } catch { /* nodo no disponible */ }
 
     // Buscar reputación en el nodo (best-effort)
     let nodeReputation = null;
@@ -380,6 +386,7 @@ server.tool(
             rewarded:          session.rewarded,
           },
 
+          node_info:          nodeInfo,
           node_reputation:    nodeReputation,
 
           premium_access: {
